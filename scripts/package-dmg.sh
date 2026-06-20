@@ -97,6 +97,8 @@ fi
   "$DMG_PATH" \
   >/dev/null
 
+/usr/bin/xattr -c "$DMG_PATH" 2>/dev/null || true
+
 if [[ "$CODE_SIGN_IDENTITY" != "-" ]]; then
   /usr/bin/codesign --force --timestamp --sign "$CODE_SIGN_IDENTITY" "$DMG_PATH" >/dev/null
   /usr/bin/codesign --verify --strict "$DMG_PATH"

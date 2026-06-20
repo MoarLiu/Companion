@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=sources.env
 source "$ROOT/scripts/sources.env"
+# shellcheck source=version.env
+source "$ROOT/scripts/version.env"
 BUILD_DIR="$ROOT/build/tests"
 EXECUTABLE="$BUILD_DIR/companion-core-tests"
 
@@ -48,7 +50,8 @@ validate_source_lists() {
 mkdir -p "$BUILD_DIR"
 validate_source_lists
 
-MACOSX_DEPLOYMENT_TARGET=12.0 /usr/bin/swiftc \
+MACOSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" /usr/bin/swiftc \
+  -target "$SWIFTC_TARGET" \
   -D COMPANION_TESTING \
   -parse-as-library \
   -framework AppKit \

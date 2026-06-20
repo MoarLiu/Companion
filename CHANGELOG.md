@@ -1,5 +1,18 @@
 # Changelog
 
+## Companion 0.2.0 (2026-06-20)
+
+### Added
+
+- Added a dedicated desktop pet skin panel with animated idle previews, skin metadata, current-state indicators, and one-click switching.
+- Added user skin discovery under the active Companion data root's `Skins` folder, plus refresh and folder-opening actions.
+
+### Changed
+
+- Re-enabled real desktop pet skin selection instead of forcing every launch and selection back to `小花儿`.
+- Split pet skin models, store, sprite loading, preview caching, and panel UI out of the main desktop pet file.
+- Unified direct Swift compiler builds around macOS 12.0 deployment targeting and added Mach-O `minos` checks to app builds and release smoke tests.
+
 ## Companion 0.1.0 (2026-06-19)
 
 ### Changed

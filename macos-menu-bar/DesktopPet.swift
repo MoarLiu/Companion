@@ -110,6 +110,28 @@ final class DesktopPetFeature: NSObject {
             self?.journalFeature.appendToToday(section: section, lines: lines)
         }
     )
+    private lazy var skinPanelController = PetSkinPanelController(
+        skinStore: skinStore,
+        selectedSkinIDProvider: { [weak self] in
+            self?.petController.selectedSkinID
+        },
+        selectSkinAction: { [weak self] skinID in
+            self?.selectPetSkinFromPanel(id: skinID)
+        },
+        reloadAction: { [weak self] in
+            self?.reloadPetSkinsFromPanel()
+        },
+        openUserSkinFolderAction: { [weak self] in
+            guard let self else {
+                throw NSError(
+                    domain: "CompanionPetSkinPanel",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Companion is unavailable."]
+                )
+            }
+            return try self.skinStore.createUserSkinDirectoryIfNeeded()
+        }
+    )
     private lazy var petController = PetController(skinStore: skinStore)
     private let petMenu = NSMenu(title: CompanionL10n.text("AI Companion"))
     private var petWindow: NSPanel?
@@ -256,13 +278,16 @@ final class DesktopPetFeature: NSObject {
         }
         petMenu.addItem(.separator())
 
-        let visibilityTitle = petController.isVisible ? "隐藏小花儿" : "显示小花儿"
+        petMenu.addItem(menuItem(title: "皮肤...", action: #selector(showPetSkinPanelAction)))
+        petMenu.addItem(.separator())
+
+        let visibilityTitle = petController.isVisible ? "隐藏\(petController.displayName)" : "显示\(petController.displayName)"
         petMenu.addItem(menuItem(title: visibilityTitle, action: #selector(togglePetVisibility), keyEquivalent: "h"))
         let autoEdgeState = petController.isAutoEdgeBehaviorEnabled ? "开" : "关"
         let autoEdgeItem = menuItem(title: "自动靠边爬墙：\(autoEdgeState)", action: #selector(toggleAutoEdgeBehavior))
         autoEdgeItem.state = petController.isAutoEdgeBehaviorEnabled ? .on : .off
         petMenu.addItem(autoEdgeItem)
-        let statusItem = NSMenuItem(title: "小花儿状态：\(petController.workflowStatusTitle)", action: nil, keyEquivalent: "")
+        let statusItem = NSMenuItem(title: "\(petController.displayName)状态：\(petController.workflowStatusTitle)", action: nil, keyEquivalent: "")
         statusItem.isEnabled = false
         petMenu.addItem(statusItem)
         if behaviorSettings.isQuietTime() {
@@ -285,6 +310,7 @@ final class DesktopPetFeature: NSObject {
             menuItem(title: "专注复盘", action: #selector(showFocusReviewAction)),
             menuItem(title: "提醒 → 专注 → 日记", action: #selector(startReminderFocusJournalRoutineAction))
         ]))
+        menu.addItem(menuItem(title: "宠物皮肤...", action: #selector(showPetSkinPanelAction)))
 
         if let additionalItems = additionalMenuItemsProvider?(), !additionalItems.isEmpty {
             for item in additionalItems {
@@ -661,6 +687,7 @@ final class DesktopPetFeature: NSObject {
         petController.$selectedSkinID
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
+                self?.skinPanelController.updateSelectedSkinID(self?.petController.selectedSkinID)
                 self?.rebuildMenu()
             }
             .store(in: &cancellables)
@@ -691,8 +718,25 @@ final class DesktopPetFeature: NSObject {
         showFocusReviewWindow()
     }
 
+    @objc private func showPetSkinPanelAction() {
+        skinPanelController.show()
+    }
+
     @objc private func startReminderFocusJournalRoutineAction() {
         onStartReminderFocusJournalRoutine?()
+    }
+
+    private func selectPetSkinFromPanel(id: String) {
+        petController.selectSkin(id: id)
+        skinPanelController.updateSelectedSkinID(petController.selectedSkinID)
+        rebuildMenu()
+    }
+
+    private func reloadPetSkinsFromPanel() {
+        skinStore.reload()
+        petController.reloadSelectedSkin()
+        skinPanelController.updateSelectedSkinID(petController.selectedSkinID)
+        rebuildMenu()
     }
 
     private func showAlert(message: String, informativeText: String) {
@@ -1006,41 +1050,58 @@ private final class PetController: ObservableObject {
     }
 
     func loadInitialSkin() {
-        let targetSkinID = PetSkinStore.xiaoHuaErSkinID
-        if UserDefaults.standard.string(forKey: Self.selectedSkinDefaultsKey) != targetSkinID {
-            UserDefaults.standard.set(targetSkinID, forKey: Self.selectedSkinDefaultsKey)
-        }
-
+        let targetSkinID = UserDefaults.standard.string(forKey: Self.selectedSkinDefaultsKey)
+            ?? PetSkinStore.xiaoHuaErSkinID
         selectSkin(id: targetSkinID)
     }
 
     func selectSkin(id: String) {
-        let targetSkinID = PetSkinStore.xiaoHuaErSkinID
-        if id != targetSkinID {
-            UserDefaults.standard.set(targetSkinID, forKey: Self.selectedSkinDefaultsKey)
-        }
-
-        guard let summary = skinStore.skins.first(where: { $0.id == targetSkinID }) else {
-            onError?("Skin not found: \(targetSkinID)")
+        guard let summary = skinStore.summary(id: id) ?? skinStore.summary(id: PetSkinStore.xiaoHuaErSkinID) else {
+            onError?("Skin not found: \(id)")
             return
         }
 
         do {
-            loadedSkin = try PetSpriteLoader.load(summary)
-            selectedSkinID = summary.id
-            UserDefaults.standard.set(summary.id, forKey: Self.selectedSkinDefaultsKey)
-            transientWorkflowWorkItem?.cancel()
-            transientWorkflowWorkItem = nil
-            transientWorkflowState = nil
-            baseWorkflowState = .idle
-            roleMoodState = .idle
-            workflowState = .idle
-            cancelEdgeBehavior(restoreAnimation: false)
-            setAnimationState("idle")
-            onLayoutChanged?()
+            applyLoadedSkin(try PetSpriteLoader.load(summary), id: summary.id)
+        } catch {
+            loadFallbackSkin(after: error, requestedID: id, attemptedID: summary.id)
+        }
+    }
+
+    func reloadSelectedSkin() {
+        selectSkin(id: selectedSkinID
+            ?? UserDefaults.standard.string(forKey: Self.selectedSkinDefaultsKey)
+            ?? PetSkinStore.xiaoHuaErSkinID)
+    }
+
+    private func loadFallbackSkin(after error: Error, requestedID: String, attemptedID: String) {
+        guard attemptedID != PetSkinStore.xiaoHuaErSkinID,
+              let fallbackSummary = skinStore.summary(id: PetSkinStore.xiaoHuaErSkinID) else {
+            onError?(error.localizedDescription)
+            return
+        }
+
+        do {
+            applyLoadedSkin(try PetSpriteLoader.load(fallbackSummary), id: fallbackSummary.id)
+            onError?("Could not load skin \(requestedID). Reverted to \(fallbackSummary.manifest.name).")
         } catch {
             onError?(error.localizedDescription)
         }
+    }
+
+    private func applyLoadedSkin(_ skin: LoadedSkin, id: String) {
+        loadedSkin = skin
+        selectedSkinID = id
+        UserDefaults.standard.set(id, forKey: Self.selectedSkinDefaultsKey)
+        transientWorkflowWorkItem?.cancel()
+        transientWorkflowWorkItem = nil
+        transientWorkflowState = nil
+        baseWorkflowState = .idle
+        roleMoodState = .idle
+        workflowState = .idle
+        cancelEdgeBehavior(restoreAnimation: false)
+        setAnimationState("idle")
+        onLayoutChanged?()
     }
 
     func startAnimation() {
@@ -2297,351 +2358,5 @@ private struct PetView: View {
         .frame(width: controller.displaySize.width, height: controller.displaySize.height)
         .background(Color.clear)
         .contentShape(Rectangle())
-    }
-}
-
-private final class PetSkinStore: ObservableObject {
-    static let xiaoHuaErSkinID = "小花儿"
-
-    @Published private(set) var skins: [PetSkinSummary] = []
-
-    private let fileManager = FileManager.default
-
-    func reload() {
-        var found: [String: PetSkinSummary] = [:]
-        for root in bundledSkinRoots() {
-            if let summary = loadXiaoHuaErSkin(from: root) {
-                found[summary.id] = summary
-            }
-        }
-
-        skins = found.values.sorted { left, right in
-            if left.origin.label == right.origin.label {
-                return left.manifest.name.localizedCaseInsensitiveCompare(right.manifest.name) == .orderedAscending
-            }
-            return left.origin.label < right.origin.label
-        }
-    }
-
-    private func bundledSkinRoots() -> [URL] {
-        var roots: [URL] = []
-
-        if let resourceURL = Bundle.main.resourceURL {
-            roots.append(resourceURL.appendingPathComponent("Skins", isDirectory: true))
-        }
-
-        let workingDirectory = URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
-        roots.append(workingDirectory.appendingPathComponent("assets/Skins", isDirectory: true))
-
-        return roots
-    }
-
-    private func loadXiaoHuaErSkin(from rootURL: URL) -> PetSkinSummary? {
-        let folderURL = rootURL.appendingPathComponent(Self.xiaoHuaErSkinID, isDirectory: true)
-        return try? readSkin(at: folderURL, origin: .bundled)
-    }
-
-    private func readSkin(at folderURL: URL, origin: PetSkinOrigin) throws -> PetSkinSummary {
-        let manifestURL = folderURL.appendingPathComponent("pet.json")
-        let legacyManifestURL = folderURL.appendingPathComponent("manifest.json")
-        let manifest: PetSkinManifest
-
-        if fileManager.fileExists(atPath: manifestURL.path) {
-            let data = try Data(contentsOf: manifestURL)
-            manifest = try JSONDecoder().decode(PetSkinManifest.self, from: data)
-        } else if fileManager.fileExists(atPath: legacyManifestURL.path) {
-            // Internal compatibility for older bundled assets; no user-facing skin install or switch UI remains.
-            let data = try Data(contentsOf: legacyManifestURL)
-            let frameManifest = try JSONDecoder().decode(PetFrameFolderManifest.self, from: data)
-            manifest = try Self.convertFrameFolderManifest(frameManifest, folderURL: folderURL)
-        } else {
-            throw PetSkinStoreError.missingManifest
-        }
-
-        if let spritesheet = manifest.spritesheet {
-            let sheetURL = folderURL.appendingPathComponent(spritesheet)
-            guard fileManager.fileExists(atPath: sheetURL.path) else {
-                throw PetSkinStoreError.missingSpriteSheet(spritesheet)
-            }
-        } else {
-            let frameRootURL = folderURL.appendingPathComponent(manifest.frameDirectory ?? "frames", isDirectory: true)
-            guard fileManager.fileExists(atPath: frameRootURL.path) else {
-                throw PetSkinStoreError.missingFrameDirectory(frameRootURL.lastPathComponent)
-            }
-        }
-
-        guard manifest.cellWidth > 0, manifest.cellHeight > 0, manifest.columns > 0 else {
-            throw PetSkinStoreError.invalidGeometry
-        }
-
-        guard manifest.states.contains(where: { $0.id == "idle" && $0.frames > 0 }) else {
-            throw PetSkinStoreError.missingIdleState
-        }
-
-        return PetSkinSummary(manifest: manifest, folderURL: folderURL, origin: origin)
-    }
-
-    private static func convertFrameFolderManifest(
-        _ manifest: PetFrameFolderManifest,
-        folderURL: URL
-    ) throws -> PetSkinManifest {
-        guard manifest.frameSize.count == 2,
-              let cellWidth = manifest.frameSize.first,
-              let cellHeight = manifest.frameSize.last,
-              cellWidth > 0,
-              cellHeight > 0 else {
-            throw PetSkinStoreError.invalidGeometry
-        }
-
-        let states = manifest.actions.map { action in
-            PetAnimationState(
-                id: stateID(for: action.id),
-                row: 0,
-                frames: manifest.framesPerAction,
-                fps: 8,
-                folder: action.id
-            )
-        }
-
-        let name = folderURL.lastPathComponent.isEmpty ? manifest.name : folderURL.lastPathComponent
-
-        return PetSkinManifest(
-            id: safeDirectoryName(for: name),
-            name: name,
-            author: nil,
-            version: nil,
-            spritesheet: nil,
-            cellWidth: cellWidth,
-            cellHeight: cellHeight,
-            columns: max(manifest.framesPerAction, 1),
-            frameDirectory: "frames",
-            states: states
-        )
-    }
-
-    private static func stateID(for legacyActionID: String) -> String {
-        switch legacyActionID {
-        case "wave":
-            return "waving"
-        case "jump":
-            return "jumping"
-        case "think":
-            return "review"
-        case "work":
-            return "running"
-        default:
-            return legacyActionID
-        }
-    }
-
-    private static func safeDirectoryName(for id: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
-        let normalized = id.unicodeScalars
-            .map { allowed.contains($0) ? String($0) : "-" }
-            .joined()
-            .replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-            .lowercased()
-
-        return normalized.isEmpty ? "skin" : normalized
-    }
-}
-
-private struct PetSkinManifest: Codable {
-    var id: String
-    var name: String
-    var author: String?
-    var version: String?
-    var spritesheet: String?
-    var cellWidth: Int
-    var cellHeight: Int
-    var columns: Int
-    var frameDirectory: String?
-    var states: [PetAnimationState]
-}
-
-private struct PetAnimationState: Codable, Identifiable {
-    var id: String
-    var row: Int
-    var frames: Int
-    var fps: Double?
-    var folder: String?
-}
-
-private enum PetSkinOrigin {
-    case bundled
-
-    var label: String {
-        switch self {
-        case .bundled:
-            return "Built-in"
-        }
-    }
-}
-
-private struct PetSkinSummary: Identifiable {
-    var id: String { manifest.id }
-
-    let manifest: PetSkinManifest
-    let folderURL: URL
-    let origin: PetSkinOrigin
-}
-
-private struct PetFrameFolderManifest: Decodable {
-    var name: String
-    var frameSize: [Int]
-    var framesPerAction: Int
-    var actions: [PetFrameFolderAction]
-
-    enum CodingKeys: String, CodingKey {
-        case name
-        case frameSize = "frame_size"
-        case framesPerAction = "frames_per_action"
-        case actions
-    }
-}
-
-private struct PetFrameFolderAction: Decodable {
-    var id: String
-    var label: String?
-    var file: String?
-}
-
-private struct LoadedSkin {
-    let manifest: PetSkinManifest
-    let folderURL: URL
-    let framesByState: [String: [NSImage]]
-}
-
-private enum PetSpriteLoader {
-    static func load(_ summary: PetSkinSummary) throws -> LoadedSkin {
-        let manifest = summary.manifest
-        if let spritesheet = manifest.spritesheet {
-            return try loadSpriteSheet(summary, spritesheet: spritesheet)
-        }
-
-        return try loadFrameFolders(summary)
-    }
-
-    private static func loadSpriteSheet(_ summary: PetSkinSummary, spritesheet: String) throws -> LoadedSkin {
-        let manifest = summary.manifest
-        let sheetURL = summary.folderURL.appendingPathComponent(spritesheet)
-
-        guard let source = CGImageSourceCreateWithURL(sheetURL as CFURL, nil),
-              let sheet = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-            throw PetSpriteLoaderError.unreadableImage(sheetURL.path)
-        }
-
-        var framesByState: [String: [NSImage]] = [:]
-        for state in manifest.states where state.frames > 0 {
-            let frameCount = min(state.frames, manifest.columns)
-            var frames: [NSImage] = []
-
-            for column in 0..<frameCount {
-                let rect = CGRect(
-                    x: column * manifest.cellWidth,
-                    y: state.row * manifest.cellHeight,
-                    width: manifest.cellWidth,
-                    height: manifest.cellHeight
-                )
-
-                guard let cropped = sheet.cropping(to: rect) else {
-                    continue
-                }
-
-                let image = NSImage(
-                    cgImage: cropped,
-                    size: NSSize(width: manifest.cellWidth, height: manifest.cellHeight)
-                )
-                frames.append(image)
-            }
-
-            if !frames.isEmpty {
-                framesByState[state.id] = frames
-            }
-        }
-
-        guard framesByState["idle"]?.isEmpty == false else {
-            throw PetSpriteLoaderError.missingUsableIdleFrames
-        }
-
-        return LoadedSkin(manifest: manifest, folderURL: summary.folderURL, framesByState: framesByState)
-    }
-
-    private static func loadFrameFolders(_ summary: PetSkinSummary) throws -> LoadedSkin {
-        let manifest = summary.manifest
-        let frameRootURL = summary.folderURL.appendingPathComponent(
-            manifest.frameDirectory ?? "frames",
-            isDirectory: true
-        )
-        var framesByState: [String: [NSImage]] = [:]
-
-        for state in manifest.states where state.frames > 0 {
-            let folderName = state.folder ?? state.id
-            let stateFolderURL = frameRootURL.appendingPathComponent(folderName, isDirectory: true)
-            let imageURLs = try frameImageURLs(in: stateFolderURL).prefix(state.frames)
-            let frames = imageURLs.compactMap { NSImage(contentsOf: $0) }
-
-            if !frames.isEmpty {
-                framesByState[state.id] = frames
-            }
-        }
-
-        guard framesByState["idle"]?.isEmpty == false else {
-            throw PetSpriteLoaderError.missingUsableIdleFrames
-        }
-
-        return LoadedSkin(manifest: manifest, folderURL: summary.folderURL, framesByState: framesByState)
-    }
-
-    private static func frameImageURLs(in folderURL: URL) throws -> [URL] {
-        let urls = try FileManager.default.contentsOfDirectory(
-            at: folderURL,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )
-
-        return urls
-            .filter { ["png", "webp", "jpg", "jpeg"].contains($0.pathExtension.lowercased()) }
-            .sorted { left, right in
-                left.lastPathComponent.localizedStandardCompare(right.lastPathComponent) == .orderedAscending
-            }
-    }
-}
-
-private enum PetSkinStoreError: LocalizedError {
-    case missingManifest
-    case missingSpriteSheet(String)
-    case missingFrameDirectory(String)
-    case invalidGeometry
-    case missingIdleState
-
-    var errorDescription: String? {
-        switch self {
-        case .missingManifest:
-            return "Skin folder must contain pet.json or manifest.json."
-        case .missingSpriteSheet(let filename):
-            return "Missing sprite sheet: \(filename)"
-        case .missingFrameDirectory(let directory):
-            return "Missing frame directory: \(directory)"
-        case .invalidGeometry:
-            return "Skin geometry must include positive cell size and column count."
-        case .missingIdleState:
-            return "Skin must define an idle state with at least one frame."
-        }
-    }
-}
-
-private enum PetSpriteLoaderError: LocalizedError {
-    case unreadableImage(String)
-    case missingUsableIdleFrames
-
-    var errorDescription: String? {
-        switch self {
-        case .unreadableImage(let path):
-            return "Could not read sprite sheet at \(path)."
-        case .missingUsableIdleFrames:
-            return "The skin did not produce usable idle frames."
-        }
     }
 }

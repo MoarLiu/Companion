@@ -46,6 +46,21 @@ require_dir() {
   [[ -d "$1" ]] || fail "missing directory: $1"
 }
 
+check_mach_o_deployment_target() {
+  local executable="$1"
+  local minos
+  minos="$(/usr/bin/otool -l "$executable" | awk '
+    $1 == "cmd" && $2 == "LC_BUILD_VERSION" { in_build = 1; next }
+    in_build && $1 == "minos" { print $2; exit }
+    $1 == "cmd" && $2 == "LC_VERSION_MIN_MACOSX" { in_min = 1; next }
+    in_min && $1 == "version" { print $2; exit }
+  ')"
+
+  [[ -n "$minos" ]] || fail "missing Mach-O deployment target in $executable"
+  [[ "$minos" == "$MACOS_DEPLOYMENT_TARGET" ]] ||
+    fail "Mach-O deployment target mismatch in $executable: expected $MACOS_DEPLOYMENT_TARGET, got $minos"
+}
+
 check_sensitive_paths() {
   local root="$1"
   local match
@@ -83,7 +98,8 @@ build_mcp_smoke_helper() {
   done
 
   mkdir -p "$(dirname "$MCP_SMOKE_EXECUTABLE")"
-  MACOSX_DEPLOYMENT_TARGET=12.0 /usr/bin/swiftc \
+  MACOSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" /usr/bin/swiftc \
+    -target "$SWIFTC_TARGET" \
     -O \
     -framework AppKit \
     -framework AVFoundation \
@@ -95,6 +111,7 @@ build_mcp_smoke_helper() {
     -framework UniformTypeIdentifiers \
     "${sources[@]}" \
     -o "$MCP_SMOKE_EXECUTABLE"
+  check_mach_o_deployment_target "$MCP_SMOKE_EXECUTABLE"
 }
 
 mcp_probe_executable() {
@@ -163,6 +180,8 @@ if "public.item" not in file_types:
 PY
 
   /usr/bin/codesign --verify --deep --strict "$APP"
+  check_mach_o_deployment_target "$CONTENTS/MacOS/$APP_NAME"
+  check_mach_o_deployment_target "$CONTENTS/MacOS/CompanionMCP"
   check_sensitive_paths "$APP"
   check_sensitive_xattrs "$APP"
 

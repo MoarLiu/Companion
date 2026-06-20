@@ -2,7 +2,7 @@ import Foundation
 
 @main
 enum CompanionMCP {
-    fileprivate static let version = "0.1.0"
+    fileprivate static let version = "0.2.0"
 
     static func main() {
         let arguments = CommandLine.arguments.dropFirst()

@@ -21,6 +21,27 @@ MCP_EXECUTABLE="$MACOS/CompanionMCP"
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-Companion Local Development Code Signing}"
 COMPANION_GITHUB_REPOSITORY="${COMPANION_GITHUB_REPOSITORY:-crazyjal/Companion}"
 
+check_mach_o_deployment_target() {
+  local executable="$1"
+  local minos
+  minos="$(/usr/bin/otool -l "$executable" | awk '
+    $1 == "cmd" && $2 == "LC_BUILD_VERSION" { in_build = 1; next }
+    in_build && $1 == "minos" { print $2; exit }
+    $1 == "cmd" && $2 == "LC_VERSION_MIN_MACOSX" { in_min = 1; next }
+    in_min && $1 == "version" { print $2; exit }
+  ')"
+
+  if [[ -z "$minos" ]]; then
+    echo "Missing Mach-O deployment target in $executable" >&2
+    exit 1
+  fi
+
+  if [[ "$minos" != "$MACOS_DEPLOYMENT_TARGET" ]]; then
+    echo "Mach-O deployment target mismatch in $executable: expected $MACOS_DEPLOYMENT_TARGET, got $minos" >&2
+    exit 1
+  fi
+}
+
 COMPANION_APP_ABS_SOURCES=()
 for source in "${COMPANION_APP_SOURCES[@]}"; do
   COMPANION_APP_ABS_SOURCES+=("$ROOT/$source")
@@ -34,7 +55,8 @@ done
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES"
 
-MACOSX_DEPLOYMENT_TARGET=12.0 /usr/bin/swiftc \
+MACOSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" /usr/bin/swiftc \
+  -target "$SWIFTC_TARGET" \
   -O \
   -framework ApplicationServices \
   -framework AppKit \
@@ -49,8 +71,10 @@ MACOSX_DEPLOYMENT_TARGET=12.0 /usr/bin/swiftc \
   -o "$EXECUTABLE"
 
 chmod 755 "$EXECUTABLE"
+check_mach_o_deployment_target "$EXECUTABLE"
 
-MACOSX_DEPLOYMENT_TARGET=12.0 /usr/bin/swiftc \
+MACOSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" /usr/bin/swiftc \
+  -target "$SWIFTC_TARGET" \
   -O \
   -framework AppKit \
   -framework AVFoundation \
@@ -64,6 +88,7 @@ MACOSX_DEPLOYMENT_TARGET=12.0 /usr/bin/swiftc \
   -o "$MCP_EXECUTABLE"
 
 chmod 755 "$MCP_EXECUTABLE"
+check_mach_o_deployment_target "$MCP_EXECUTABLE"
 
 if [[ -f "$ROOT/assets/companion-icon.icns" ]]; then
   /usr/bin/ditto --noextattr --noacl "$ROOT/assets/companion-icon.icns" "$RESOURCES/AppIcon.icns"
@@ -113,7 +138,7 @@ cat >"$CONTENTS/Info.plist" <<PLIST
   <key>CompanionGitHubRepository</key>
   <string>$COMPANION_GITHUB_REPOSITORY</string>
   <key>LSMinimumSystemVersion</key>
-  <string>12.0</string>
+  <string>$MACOS_DEPLOYMENT_TARGET</string>
   <key>LSUIElement</key>
   <true/>
   <key>NSHighResolutionCapable</key>

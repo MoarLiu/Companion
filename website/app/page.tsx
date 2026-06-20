@@ -103,7 +103,7 @@ export default function Home() {
                 </div>
               </div>
               <span className="rounded-md bg-[#e4f4ee] px-3 py-1 text-xs font-medium text-[#0f6f5d]">
-                Seed 0.1.0
+                Seed 0.2.0
               </span>
             </div>
             <Image
