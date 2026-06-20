@@ -1,0 +1,10 @@
+*.md text eol=lf
+*.plist text eol=lf
+*.sh text eol=lf
+*.svg text eol=lf
+*.swift text eol=lf
+*.png binary
+*.ico binary
+*.icns binary
+*.node binary
+COMPANION.app/Contents/MacOS/COMPANION binary

@@ -1,0 +1,21 @@
+{
+  "launch": [
+    "launch-welcome-01.aiff",
+    "launch-welcome-02.aiff"
+  ],
+  "focusStart": [
+    "focus-start-01.aiff"
+  ],
+  "focusEnd": [
+    "focus-end-01.aiff"
+  ],
+  "breakStart": [
+    "focus-end-01.aiff"
+  ],
+  "reminderDue": [
+    "reminder-due-01.aiff"
+  ],
+  "translationDone": [
+    "translation-done-01.aiff"
+  ]
+}

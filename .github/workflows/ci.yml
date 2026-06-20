@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-tests:
+    name: Release smoke
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      # 干净 runner 没有本机签名证书；用 ad-hoc 签名（与 smoke-release.sh 一致）。
+      CODE_SIGN_IDENTITY: "-"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swiftc --version
+          sw_vers
+
+      - name: SwiftPM build
+        run: swift build --product Companion
+
+      - name: Release smoke
+        run: bash scripts/smoke-release.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Website install
+        working-directory: website
+        run: npm ci
+
+      - name: Website lint
+        working-directory: website
+        run: npm run lint
+
+      - name: Website build
+        working-directory: website
+        run: npm run build
