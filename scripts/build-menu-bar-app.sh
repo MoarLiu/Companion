@@ -19,7 +19,7 @@ RESOURCES="$CONTENTS/Resources"
 EXECUTABLE="$MACOS/Companion"
 MCP_EXECUTABLE="$MACOS/CompanionMCP"
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-Companion Local Development Code Signing}"
-COMPANION_GITHUB_REPOSITORY="${COMPANION_GITHUB_REPOSITORY:-crazyjal/Companion}"
+COMPANION_GITHUB_REPOSITORY="${COMPANION_GITHUB_REPOSITORY:-MoarLiu/Companion}"
 
 check_mach_o_deployment_target() {
   local executable="$1"

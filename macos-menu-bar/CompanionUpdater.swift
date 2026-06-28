@@ -81,7 +81,7 @@ final class CompanionUpdateController {
         }
     }
 
-    private static let defaultGitHubRepository = "crazyjal/Companion"
+    private static let defaultGitHubRepository = "MoarLiu/Companion"
     private static let gitHubRepositoryInfoKey = "CompanionGitHubRepository"
     static var releasesURL: URL {
         githubURL(path: "/\(gitHubRepository)/releases")
