@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 private enum DesktopPetMusicMiniPlayerChrome {
@@ -13,28 +14,36 @@ private enum DesktopPetMusicMiniPlayerChrome {
     }
 }
 
+private final class DesktopPetMusicMiniPlayerViewState: ObservableObject {
+    @Published var isExpanded = false
+}
+
 final class DesktopPetMusicMiniPlayerController {
     private static let collapsedSize = NSSize(width: 304, height: 166)
     private static let expandedSize = NSSize(width: 304, height: 414)
 
     private var panel: DesktopPetMusicMiniPlayerPanel?
     private weak var anchorWindow: NSWindow?
+    private let viewState = DesktopPetMusicMiniPlayerViewState()
 
     deinit {
         panel?.orderOut(nil)
     }
 
-    func show(anchorWindow: NSWindow?, musicFeature: DesktopPetMusicFeature) {
+    func show(anchorWindow: NSWindow?, musicFeature: DesktopPetMusicFeature, expanded: Bool = false) {
         self.anchorWindow = anchorWindow
+        let shouldExpand = expanded || (panel?.isVisible == true && viewState.isExpanded)
+        viewState.isExpanded = shouldExpand
 
         if let panel, panel.isVisible {
-            panel.setFrame(Self.frame(for: panel.frame.size, anchorWindow: anchorWindow), display: true, animate: true)
+            let size = shouldExpand ? Self.expandedSize : Self.collapsedSize
+            panel.setFrame(Self.frame(for: size, anchorWindow: anchorWindow), display: true, animate: true)
             panel.orderFrontRegardless()
             panel.makeKey()
             return
         }
 
-        let size = Self.collapsedSize
+        let size = shouldExpand ? Self.expandedSize : Self.collapsedSize
         let panel = DesktopPetMusicMiniPlayerPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless],
@@ -58,9 +67,11 @@ final class DesktopPetMusicMiniPlayerController {
 
         let view = DesktopPetMusicMiniPlayerView(
             musicFeature: musicFeature,
+            viewState: viewState,
             closeAction: { [weak panel] in panel?.close() },
-            resizeAction: { [weak panel] isExpanded in
+            resizeAction: { [weak self, weak panel] isExpanded in
                 guard let panel else { return }
+                self?.viewState.isExpanded = isExpanded
                 let targetSize = isExpanded ? Self.expandedSize : Self.collapsedSize
                 panel.setFrame(Self.frame(for: targetSize, preservingPositionOf: panel), display: true, animate: true)
             }
@@ -224,10 +235,9 @@ private final class DesktopPetMusicHostingView<Content: View>: CompanionInteract
 
 private struct DesktopPetMusicMiniPlayerView: View {
     @ObservedObject var musicFeature: DesktopPetMusicFeature
+    @ObservedObject var viewState: DesktopPetMusicMiniPlayerViewState
     let closeAction: () -> Void
     let resizeAction: (Bool) -> Void
-
-    @State private var isExpanded = false
 
     private var snapshot: DesktopPetMusicPlayerSnapshot {
         musicFeature.snapshot
@@ -238,7 +248,7 @@ private struct DesktopPetMusicMiniPlayerView: View {
             header
             nowPlaying
             controls
-            if isExpanded {
+            if viewState.isExpanded {
                 playlist
             }
         }
@@ -351,7 +361,7 @@ private struct DesktopPetMusicMiniPlayerView: View {
                 Spacer(minLength: 0)
 
                 Button(action: toggleList) {
-                    Image(systemName: isExpanded ? "list.bullet.rectangle.fill" : "list.bullet")
+                    Image(systemName: viewState.isExpanded ? "list.bullet.rectangle.fill" : "list.bullet")
                 }
                 .buttonStyle(DesktopPetMusicIconButtonStyle(size: 30, symbolSize: 11))
                 .help("播放列表")
@@ -427,8 +437,8 @@ private struct DesktopPetMusicMiniPlayerView: View {
     }
 
     private func toggleList() {
-        isExpanded.toggle()
-        resizeAction(isExpanded)
+        viewState.isExpanded.toggle()
+        resizeAction(viewState.isExpanded)
     }
 }
 

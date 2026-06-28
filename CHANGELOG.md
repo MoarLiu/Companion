@@ -1,5 +1,13 @@
 # Changelog
 
+## Companion 0.2.1 (2026-06-28)
+
+### Changed
+
+- Added a Music submenu to the menu bar with playback, track navigation, and playlist access.
+- Moved Focus Review and the Reminder -> Focus -> Journal routine into the Pomodoro menu.
+- Made the Pomodoro completion bubble draggable and sized to its content to avoid excess blank space.
+
 ## Companion 0.2.0 (2026-06-20)
 
 ### Added

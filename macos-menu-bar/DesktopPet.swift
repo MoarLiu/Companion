@@ -259,13 +259,16 @@ final class DesktopPetFeature: NSObject {
         for item in pomodoroFeature.makeMenuItems() {
             petMenu.addItem(item)
         }
+        petMenu.addItem(menuItem(title: "专注复盘", action: #selector(showFocusReviewAction)))
+        petMenu.addItem(menuItem(title: "提醒 → 专注 → 日记", action: #selector(startReminderFocusJournalRoutineAction)))
         petMenu.addItem(.separator())
 
         for item in journalFeature.makeMenuItems() {
             petMenu.addItem(item)
         }
-        petMenu.addItem(menuItem(title: "专注复盘", action: #selector(showFocusReviewAction)))
-        petMenu.addItem(menuItem(title: "提醒 → 专注 → 日记", action: #selector(startReminderFocusJournalRoutineAction)))
+        petMenu.addItem(.separator())
+
+        petMenu.addItem(submenuItem(title: "音乐", items: musicMenuItems()))
         petMenu.addItem(.separator())
 
         for item in behaviorSettings.makeMenuItems() {
@@ -304,12 +307,9 @@ final class DesktopPetFeature: NSObject {
 
     func appendMenuItems(to menu: NSMenu) {
         menu.addItem(submenuItem(title: "提醒事项", items: reminderMenuItems()))
-        menu.addItem(submenuItem(title: "番茄闹钟", items: pomodoroFeature.makeMainMenuItems()))
+        menu.addItem(submenuItem(title: "番茄闹钟", items: pomodoroMainMenuItems()))
         menu.addItem(submenuItem(title: "日记", items: journalFeature.makeMainMenuItems()))
-        menu.addItem(submenuItem(title: "专注", items: [
-            menuItem(title: "专注复盘", action: #selector(showFocusReviewAction)),
-            menuItem(title: "提醒 → 专注 → 日记", action: #selector(startReminderFocusJournalRoutineAction))
-        ]))
+        menu.addItem(submenuItem(title: "音乐", items: musicMenuItems()))
         menu.addItem(menuItem(title: "宠物皮肤...", action: #selector(showPetSkinPanelAction)))
 
         if let additionalItems = additionalMenuItemsProvider?(), !additionalItems.isEmpty {
@@ -327,6 +327,41 @@ final class DesktopPetFeature: NSObject {
 
         sourceItems[1].title = "查看记录"
         return Array(sourceItems.prefix(2))
+    }
+
+    private func pomodoroMainMenuItems() -> [NSMenuItem] {
+        var items = pomodoroFeature.makeMainMenuItems()
+        items.append(.separator())
+        items.append(menuItem(title: "专注复盘", action: #selector(showFocusReviewAction)))
+        items.append(menuItem(title: "提醒 → 专注 → 日记", action: #selector(startReminderFocusJournalRoutineAction)))
+        return items
+    }
+
+    private func musicMenuItems() -> [NSMenuItem] {
+        let snapshot = musicFeature.snapshot
+
+        let startItem = menuItem(title: "开始播放", action: #selector(startMusicPlaybackAction))
+        startItem.isEnabled = !musicFeature.hasActivePlayback && !snapshot.status.isBusy
+
+        let stopItem = menuItem(title: "停止播放", action: #selector(stopMusicPlaybackAction))
+        stopItem.isEnabled = musicFeature.hasActivePlayback || snapshot.status.isPlaying || snapshot.status.isBusy
+
+        let nextItem = menuItem(title: "下一首", action: #selector(playNextMusicTrackAction))
+        nextItem.isEnabled = !snapshot.status.isBusy
+
+        let previousItem = menuItem(title: "上一首", action: #selector(playPreviousMusicTrackAction))
+        previousItem.isEnabled = !snapshot.status.isBusy && snapshot.canPlayPrevious
+
+        let playlistItem = menuItem(title: "查看歌单", action: #selector(showMusicPlaylistAction))
+
+        return [
+            startItem,
+            stopItem,
+            nextItem,
+            previousItem,
+            .separator(),
+            playlistItem
+        ]
     }
 
     private func submenuItem(title: String, items: [NSMenuItem]) -> NSMenuItem {
@@ -691,6 +726,13 @@ final class DesktopPetFeature: NSObject {
                 self?.rebuildMenu()
             }
             .store(in: &cancellables)
+
+        musicFeature.$snapshot
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.rebuildMenu()
+            }
+            .store(in: &cancellables)
     }
 
     private func menuItem(title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
@@ -724,6 +766,30 @@ final class DesktopPetFeature: NSObject {
 
     @objc private func startReminderFocusJournalRoutineAction() {
         onStartReminderFocusJournalRoutine?()
+    }
+
+    @objc private func startMusicPlaybackAction() {
+        musicFeature.startRandomPlayback()
+        rebuildMenu()
+    }
+
+    @objc private func stopMusicPlaybackAction() {
+        musicFeature.stop()
+        rebuildMenu()
+    }
+
+    @objc private func playNextMusicTrackAction() {
+        musicFeature.playNextTrack()
+        rebuildMenu()
+    }
+
+    @objc private func playPreviousMusicTrackAction() {
+        musicFeature.playPreviousTrack()
+        rebuildMenu()
+    }
+
+    @objc private func showMusicPlaylistAction() {
+        showPetMusicMiniPlayer(expanded: true)
     }
 
     private func selectPetSkinFromPanel(id: String) {
@@ -832,8 +898,8 @@ final class DesktopPetFeature: NSObject {
         }
     }
 
-    private func showPetMusicMiniPlayer() {
-        musicMiniPlayerController.show(anchorWindow: petWindow, musicFeature: musicFeature)
+    private func showPetMusicMiniPlayer(expanded: Bool = false) {
+        musicMiniPlayerController.show(anchorWindow: petWindow, musicFeature: musicFeature, expanded: expanded)
         petController.showWorkflowMoment(.happy, duration: 3)
     }
 

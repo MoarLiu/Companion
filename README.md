@@ -12,7 +12,7 @@
 
 Companion 是一个本地优先的 macOS 菜单栏应用，围绕“小花儿”桌面伴侣，把提醒、番茄专注、日记、AI 快捷动作和本地 MCP 工作流放在同一个轻量工具里。
 
-当前版本：`0.2.0`
+当前版本：`0.2.1`
 
 ## 核心功能
 
@@ -34,13 +34,18 @@ Companion
 │  └─ 查看记录
 ├─ 番茄闹钟
 │  ├─ 开始专注 25 分钟
-│  └─ 开始休息 5 分钟
+│  ├─ 开始休息 5 分钟
+│  ├─ 专注复盘
+│  └─ 提醒 → 专注 → 日记
 ├─ 日记
 │  ├─ 创建新日记
 │  └─ 查看日记
-├─ 专注
-│  ├─ 专注复盘
-│  └─ 提醒 → 专注 → 日记
+├─ 音乐
+│  ├─ 开始播放
+│  ├─ 停止播放
+│  ├─ 下一首
+│  ├─ 上一首
+│  └─ 查看歌单
 ├─ 宠物皮肤...
 ├─ AI 快捷动作
 ├─ Companion 数据
@@ -132,8 +137,8 @@ CODE_SIGN_IDENTITY=- bash scripts/package-dmg.sh
 输出位置：
 
 ```text
-dist/Companion-0.2.0-macos-arm64.dmg
-dist/Companion-0.2.0-macos-arm64.dmg.sha256
+dist/Companion-0.2.1-macos-arm64.dmg
+dist/Companion-0.2.1-macos-arm64.dmg.sha256
 ```
 
 执行完整发布烟测：
@@ -161,13 +166,13 @@ gh auth login -h github.com
 gh repo create Companion --private --source=. --remote=origin
 git add .
 git commit -m "Initial Companion release"
-git tag v0.2.0
+git tag v0.2.1
 git push -u origin main
-git push origin v0.2.0
-gh release create v0.2.0 \
-  dist/Companion-0.2.0-macos-arm64.dmg \
-  dist/Companion-0.2.0-macos-arm64.dmg.sha256 \
-  --title "Companion 0.2.0" \
+git push origin v0.2.1
+gh release create v0.2.1 \
+  dist/Companion-0.2.1-macos-arm64.dmg \
+  dist/Companion-0.2.1-macos-arm64.dmg.sha256 \
+  --title "Companion 0.2.1" \
   --notes-file CHANGELOG.md
 ```
 

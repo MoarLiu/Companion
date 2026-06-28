@@ -1252,6 +1252,10 @@ private final class PetPomodoroBubblePanel: NSPanel {
 }
 
 private final class PetPomodoroBubbleController {
+    private static let bubbleWidth: CGFloat = 368
+    private static let fallbackFocusBubbleHeight: CGFloat = 172
+    private static let fallbackBreakBubbleHeight: CGFloat = 148
+
     private let controller: PetPomodoroController
     var saveFocusRecordAction: ((PetFocusRecord) -> Void)?
     private var panel: NSPanel?
@@ -1272,21 +1276,6 @@ private final class PetPomodoroBubbleController {
     func show(completion: PetPomodoroCompletion, anchorWindow: NSWindow?) {
         close()
 
-        let size = NSSize(width: 330, height: 210)
-        let panel = PetPomodoroBubblePanel(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        CompanionModalPanelStyle.applyPopupWindowChrome(to: panel)
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.hasShadow = false
-        panel.hidesOnDeactivate = false
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.title = "小花儿番茄闹钟"
-
         let view = PetPomodoroBubbleView(
             completion: completion,
             startFocusAction: { [weak self] in
@@ -1305,13 +1294,42 @@ private final class PetPomodoroBubbleController {
                 self?.close()
             }
         )
-        let hostingView = CompanionInteractiveHostingView(rootView: view)
+        let hostingView = PetPomodoroBubbleHostingView(rootView: view)
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        let size = Self.fittingSize(
+            for: hostingView,
+            width: Self.bubbleWidth,
+            fallbackHeight: completion.mode == .focus ? Self.fallbackFocusBubbleHeight : Self.fallbackBreakBubbleHeight
+        )
         hostingView.frame = NSRect(origin: .zero, size: size)
+        hostingView.autoresizingMask = [.width, .height]
+
+        let panel = PetPomodoroBubblePanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        CompanionModalPanelStyle.applyPopupWindowChrome(to: panel)
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hasShadow = false
+        panel.hidesOnDeactivate = false
+        panel.isFloatingPanel = true
+        panel.isMovable = true
+        panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.titlebarAppearsTransparent = true
+        panel.titleVisibility = .hidden
+        panel.title = "小花儿番茄闹钟"
         panel.contentView = hostingView
         panel.setFrameOrigin(Self.origin(for: size, anchorWindow: anchorWindow))
         panel.orderFrontRegardless()
+        panel.makeKey()
 
         self.panel = panel
     }
@@ -1343,6 +1361,30 @@ private final class PetPomodoroBubbleController {
             x: visibleFrame.maxX - size.width - 24,
             y: visibleFrame.minY + 88
         )
+    }
+
+    private static func fittingSize<Content: View>(
+        for hostingView: NSHostingView<Content>,
+        width: CGFloat,
+        fallbackHeight: CGFloat
+    ) -> NSSize {
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        let widthConstraint = hostingView.widthAnchor.constraint(equalToConstant: width)
+        widthConstraint.isActive = true
+        hostingView.layoutSubtreeIfNeeded()
+        let measuredHeight = ceil(hostingView.fittingSize.height)
+        widthConstraint.isActive = false
+        hostingView.translatesAutoresizingMaskIntoConstraints = true
+
+        let maxHeight = (NSScreen.main?.visibleFrame.height ?? 900) - 80
+        let height = min(max(measuredHeight > 1 ? measuredHeight : fallbackHeight, 120), maxHeight)
+        return NSSize(width: width, height: height)
+    }
+}
+
+private final class PetPomodoroBubbleHostingView<Content: View>: CompanionInteractiveHostingView<Content> {
+    override var mouseDownCanMoveWindow: Bool {
+        true
     }
 }
 
@@ -1683,7 +1725,7 @@ private struct PetPomodoroBubbleView: View {
             }
         }
         .padding(18)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .companionGlassPanel(radius: 32)
         .padding(1)
     }

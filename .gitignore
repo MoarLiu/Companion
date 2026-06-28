@@ -48,6 +48,7 @@ review_*.md
 RELEASE_*_DRAFT.md
 
 # Local design drafts and generated design plugin outputs
+.codex-work/
 docs/
 design/
 assets/image.png
